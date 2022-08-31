@@ -191,10 +191,10 @@ int main() {
 
   // Use buffers only to verify same mangled kernel name isn't used twice inside
   // implementation.
-    Error += test<class Case3>(
-        Q, GSize, WGSize,
-        RedFactory<UseBuf>{}.get<float>(Q, GSize, 0, 1000, std::plus<>{}),
-        RedFactory<UseBuf>{}.get<int>(Q, GSize, 0, 2000, std::plus<>{}));
+  Error += test<class Case3>(
+      Q, GSize, WGSize,
+      RedFactory<UseBuf>{}.get<float>(Q, GSize, 0, 1000, std::plus<>{}),
+      RedFactory<UseBuf>{}.get<int>(Q, GSize, 0, 2000, std::plus<>{}));
 
   printFinalStatus(Error);
   return Error;
