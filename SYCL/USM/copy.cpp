@@ -71,8 +71,9 @@ template <typename T> void test(queue q, T val, T *src, T *dst, bool dev_dst) {
 }
 
 template <typename T> void runTests(queue q, T val, alloc kind1, alloc kind2) {
-  if ((std::is_same_v<T, double> || std::is_same_v < T, test_struct>) && 
-      !q.get_device().has(sycl::aspect::fp64))
+  if ((std::is_same_v<T, double> || std::is_same_v<T, test_struct>)&&!q
+          .get_device()
+          .has(sycl::aspect::fp64))
     return;
   bool dev_dst1 = (kind1 == alloc::device);
   bool dev_dst2 = (kind2 == alloc::device);
