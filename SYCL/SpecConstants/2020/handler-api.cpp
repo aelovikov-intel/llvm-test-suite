@@ -142,9 +142,9 @@ bool test_set_and_get_on_host(sycl::queue q) {
             "integer specializaiton constant after setting a new value"))
       ++errors;
 
-    if (!check_value(
-            new_float_value, cgh.get_specialization_constant<float_id>(),
-            "float specializaiton constant after setting a new value"))
+    if (!check_value(new_float_value,
+                     cgh.get_specialization_constant<float_id>(),
+                     "float specializaiton constant after setting a new value"))
       ++errors;
 
     if (!check_value(
