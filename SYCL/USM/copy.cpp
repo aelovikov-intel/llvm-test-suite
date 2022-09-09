@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// RUN: %clangxx -fsycl -fsycl-targets=%sycl_triple  %s -o %t1.out
+// RUN: %clangxx -fsycl-device-code-split=per_kernel -fsycl -fsycl-targets=%sycl_triple  %s -o %t1.out
 // RUN: %CPU_RUN_PLACEHOLDER %t1.out
 // RUN: %GPU_RUN_PLACEHOLDER %t1.out
 // RUN: %ACC_RUN_PLACEHOLDER %t1.out
@@ -71,6 +71,9 @@ template <typename T> void test(queue q, T val, T *src, T *dst, bool dev_dst) {
 }
 
 template <typename T> void runTests(queue q, T val, alloc kind1, alloc kind2) {
+  if ((std::is_same_v<T, double> || std::is_same_v < T, test_struct>) && 
+      !q.get_device().has(sycl::aspect::fp64))
+    return;
   bool dev_dst1 = (kind1 == alloc::device);
   bool dev_dst2 = (kind2 == alloc::device);
   test(q, val, regular<T>(q, kind1), regular<T>(q, kind2), dev_dst2);
