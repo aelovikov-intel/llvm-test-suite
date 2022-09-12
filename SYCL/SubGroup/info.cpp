@@ -24,7 +24,7 @@ int main() {
 
   /* Basic sub-group functionality is supported as part of cl_khr_subgroups
    * extension or as core OpenCL 2.1 feature. */
-  if (!core_sg_supported(Device) || !Device.has(aspect::fp64)) {
+  if (!core_sg_supported(Device)) {
     std::cout << "Skipping test\n";
     return 0;
   }
