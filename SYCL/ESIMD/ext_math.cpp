@@ -15,7 +15,7 @@
 // - math function - sin, cos, ..., div_ieee, pow
 // - SYCL vs ESIMD APIs
 
-// Temporarily disable until the failure is being investigated.
+// Temporarily disable while the failure is being investigated.
 // UNSUPPORTED: windows
 
 #include "esimd_test_utils.hpp"

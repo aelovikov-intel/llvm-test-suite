@@ -12,7 +12,7 @@
 //
 // The test checks main functionality of the esimd::replicate_vs_w_hs function.
 
-// Temporarily disable until the failure is being investigated.
+// Temporarily disable while the failure is being investigated.
 // UNSUPPORTED: windows
 
 #include "../esimd_test_utils.hpp"
