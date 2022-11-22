@@ -78,10 +78,12 @@ static void test(RangeTy Range) {
 
   auto N = get_global_range(Range).size();
   int Expected = InitToIdentity ? N : Init + N;
-#ifdef __PRETTY_FUNCTION__
-  std::cout << __PRETTY_FUNCTION__ << ": " << *Result << ", expected "
-            << Expected << std::endl;
+#if defined(__PRETTY_FUNCTION__)
+  std::cout << __PRETTY_FUNCTION__;
+#elif defined(__FUNCSIG__)
+  std::cout << __FUNCSIG__;
 #endif
+  std::cout << ": " << *Result << ", expected " << Expected << std::endl;
   assert(*Result == Expected);
 
   if constexpr (UseUSM)
