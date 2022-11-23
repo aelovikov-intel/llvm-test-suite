@@ -21,24 +21,37 @@ template <int Dims> auto get_global_id(nd_item<Dims> NDItem) {
 
 template <int Dims> auto get_global_id(id<Dims> Id) { return Id; }
 
+// We can select strategy explicitly so no need to test all combinations of
+// types/operations.
+using T = int;
+using BinOpTy = std::plus<T>;
+
+// On Windows, allocating new memory and then initializing it is slow for some
+// reason (not related to reductions). Try to re-use the same memory between
+// test cases.
+struct RedStorage {
+  RedStorage(queue &q) : q(q), Ptr(malloc_device<T>(1, q)), Buf(1) {}
+  ~RedStorage() { free(Ptr, q); }
+
+  template <bool UseUSM> auto get() {
+    if constexpr (UseUSM)
+      return Ptr;
+    else
+      return Buf;
+  }
+  queue &q;
+  T *Ptr;
+  buffer<T, 1> Buf;
+};
+
 template <bool UseUSM, bool InitToIdentity,
           detail::reduction::strategy Strategy, typename RangeTy>
-static void test(RangeTy Range) {
-  queue q;
-
-  // We can select strategy explicitly so no need to test all combinations of
-  // types/operations.
-  using T = int;
-  using BinOpTy = std::plus<T>;
+static void test(RedStorage &Storage, RangeTy Range) {
+  queue &q = Storage.q;
 
   T Init{19};
 
-  auto Red = [&]() {
-    if constexpr (UseUSM)
-      return malloc_device<T>(1, q);
-    else
-      return buffer<T, 1>{1};
-  }();
+  auto Red = Storage.get<UseUSM>();
   auto GetRedAcc = [&](handler &cgh) {
     if constexpr (UseUSM)
       return Red;
@@ -86,8 +99,6 @@ static void test(RangeTy Range) {
   std::cout << ": " << *Result << ", expected " << Expected << std::endl;
   assert(*Result == Expected);
 
-  if constexpr (UseUSM)
-    free(Red, q);
   free(Result, q);
 }
 
@@ -101,21 +112,24 @@ template <int count, class F> void loop(F &&f) {
 }
 
 template <bool UseUSM, bool InitToIdentity, typename RangeTy>
-void testAllStrategies(RangeTy Range) {
+void testAllStrategies(RedStorage &Storage, RangeTy Range) {
   loop<(int)detail::reduction::strategy::multi>([&](auto Id) {
     constexpr auto Strategy =
         // Skip auto_select == 0.
         detail::reduction::strategy{decltype(Id)::value + 1};
-    test<UseUSM, InitToIdentity, Strategy>(Range);
+    test<UseUSM, InitToIdentity, Strategy>(Storage, Range);
   });
 }
 
 int main() {
-  auto TestRange = [](auto Range) {
-    testAllStrategies<true, true>(Range);
-    testAllStrategies<true, false>(Range);
-    testAllStrategies<false, true>(Range);
-    testAllStrategies<false, false>(Range);
+  queue q;
+  RedStorage Storage(q);
+
+  auto TestRange = [&](auto Range) {
+    testAllStrategies<true, true>(Storage, Range);
+    testAllStrategies<true, false>(Storage, Range);
+    testAllStrategies<false, true>(Storage, Range);
+    testAllStrategies<false, false>(Storage, Range);
   };
 
   TestRange(range<1>{42});
