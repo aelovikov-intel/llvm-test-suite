@@ -4,7 +4,6 @@
 // RUN: %ACC_RUN_PLACEHOLDER %t.out
 
 #include <sycl/sycl.hpp>
-#include <time.h>
 using namespace sycl;
 
 template <int Dims> auto get_global_range(range<Dims> Range) { return Range; }
@@ -79,10 +78,6 @@ static void test(RangeTy Range) {
 
   auto N = get_global_range(Range).size();
   int Expected = InitToIdentity ? N : Init + N;
-
-  std::time_t end_time =
-      std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-  std::cout << std::ctime(&end_time);
 #if defined(__PRETTY_FUNCTION__)
   std::cout << __PRETTY_FUNCTION__;
 #elif defined(__FUNCSIG__)
@@ -116,9 +111,6 @@ void testAllStrategies(RangeTy Range) {
 }
 
 int main() {
-  std::time_t end_time =
-      std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-  std::cout << std::ctime(&end_time);
   auto TestRange = [](auto Range) {
     testAllStrategies<true, true>(Range);
     testAllStrategies<true, false>(Range);
