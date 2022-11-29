@@ -3,7 +3,7 @@
 // RUN: %GPU_RUN_PLACEHOLDER %t.out
 
 // Temporarily disabled on HIP and L0 due to sporadic failures.
-// UNSUPPORTED: hip, level_zero
+// UNSUPPORTED: hip, level_zero, cuda
 
 #include <iostream>
 #include <stdlib.h>
