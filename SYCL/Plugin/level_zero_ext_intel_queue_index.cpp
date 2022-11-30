@@ -84,10 +84,12 @@ void test_pvc(device &d) {
   } else {
     // Make FileCheck pass.
     std::cout << "Fake ZE_DEBUG output for FileCheck:" << std::endl;
+    // clang-format off
     std::cout << "[getZeQueue]: create queue ordinal = 0, index = 0 (round robin in [0, 0])" << std::endl;
     std::cout << "[getZeQueue]: create queue ordinal = 0, index = 2 (round robin in [2, 2])" << std::endl;
     std::cout << "[getZeQueue]: create queue ordinal = 0, index = 2 (round robin in [2, 2])" << std::endl;
     std::cout << "[getZeQueue]: create queue ordinal = 0, index = 1 (round robin in [1, 1])" << std::endl;
+    // clang-format on
   }
   std::cout << "Test PVC End" << std::endl;
   // CHECK-PVC: Test PVC End
