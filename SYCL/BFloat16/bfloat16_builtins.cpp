@@ -12,6 +12,7 @@
 #include <vector>
 
 using namespace sycl;
+using namespace sycl::ext::oneapi;
 using namespace sycl::ext::oneapi::experimental;
 
 constexpr int N = 60; // divisible by all tested array sizes
@@ -222,7 +223,7 @@ bool check(float a, float b) {
 int main() {
   queue q;
 
-  if (q.get_device().has(aspect::ext_oneapi_bfloat16)) {
+  if (q.get_device().has(aspect::ext_oneapi_bfloat16_math_functions)) {
     std::vector<float> a(N), b(N), c(N);
     int err = 0;
 
