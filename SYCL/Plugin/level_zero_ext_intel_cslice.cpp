@@ -66,15 +66,28 @@ void test_pvc(device &d) {
 
     auto sub_sub_devices = sub_device.create_sub_devices<
         info::partition_property::ext_intel_partition_by_cslice>();
-    auto &sub_sub_device = sub_sub_devices[0];
+    auto &sub_sub_device = sub_sub_devices[1];
     assert(!PartitionableByAffinityDomain(sub_sub_device));
     assert(!PartitionableByCSlice(sub_sub_device));
     assert(sub_sub_device.get_info<info::device::partition_type_property>() ==
            info::partition_property::ext_intel_partition_by_cslice);
+
+    {
+      queue q{sub_device};
+      // CHECK-PVC: [getZeQueue]: create queue ordinal = 0, index = 0 (round robin in [0, 0])
+      q.single_task([=]() {});
+    }
+    {
+      queue q{sub_sub_device};
+      // CHECK-PVC: [getZeQueue]: create queue ordinal = 0, index = 1 (round robin in [1, 1])
+      q.single_task([=]() {});
+    }
   } else {
     // Make FileCheck pass.
     std::cout << "Fake ZE_DEBUG output for FileCheck:" << std::endl;
     // clang-format off
+    std::cout << "[getZeQueue]: create queue ordinal = 0, index = 0 (round robin in [0, 0])" << std::endl;
+    std::cout << "[getZeQueue]: create queue ordinal = 0, index = 1 (round robin in [1, 1])" << std::endl;
     // clang-format on
   }
   std::cout << "Test PVC End" << std::endl;
