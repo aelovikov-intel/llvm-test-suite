@@ -7,6 +7,25 @@
 
 using namespace sycl;
 
+template <typename RangeTy, typename ElemTy>
+bool contains(RangeTy &&Range, const ElemTy &Elem) {
+  return std::find(Range.begin(), Range.end(), Elem) != Range.end();
+}
+
+bool isPartitionableBy(device &Dev, info::partition_property Prop) {
+  return contains(Dev.get_info<info::device::partition_properties>(), Prop);
+}
+
+bool isPartitionableByCSlice(device &Dev) {
+  return isPartitionableBy(
+      Dev, info::partition_property::ext_intel_partition_by_cslice);
+}
+
+bool isPartitionableByAffinityDomain(device &Dev) {
+  return isPartitionableBy(
+      Dev, info::partition_property::partition_by_affinity_domain);
+}
+
 void test_pvc(device &d) {
   std::cout << "Test PVC Begin" << std::endl;
   // CHECK-PVC: Test PVC Begin
@@ -17,23 +36,9 @@ void test_pvc(device &d) {
   }();
   std::cout << "IsPVC: " << std::boolalpha << IsPVC << std::endl;
   if (IsPVC) {
-    auto Contains = [](auto Range, auto Elem) {
-      return std::find(Range.begin(), Range.end(), Elem) != Range.end();
-    };
-    auto PartitionableBy = [&](device &d, info::partition_property Prop) {
-      return Contains(d.get_info<info::device::partition_properties>(), Prop);
-    };
-    auto PartitionableByCSlice = [&](device &d) {
-      return PartitionableBy(
-          d, info::partition_property::ext_intel_partition_by_cslice);
-    };
-    auto PartitionableByAffinityDomain = [&](device &d) {
-      return PartitionableBy(
-          d, info::partition_property::partition_by_affinity_domain);
-    };
 
-    assert(PartitionableByAffinityDomain(d));
-    assert(!PartitionableByCSlice(d));
+    assert(isPartitionableByAffinityDomain(d));
+    assert(!isPartitionableByCSlice(d));
     {
       try {
         std::ignore = d.create_sub_devices<
@@ -48,8 +53,8 @@ void test_pvc(device &d) {
         info::partition_property::partition_by_affinity_domain>(
         info::partition_affinity_domain::next_partitionable);
     device &sub_device = sub_devices[1];
-    assert(!PartitionableByAffinityDomain(sub_device));
-    assert(PartitionableByCSlice(sub_device));
+    assert(!isPartitionableByAffinityDomain(sub_device));
+    assert(isPartitionableByCSlice(sub_device));
     assert(sub_device.get_info<info::device::partition_type_property>() ==
            info::partition_property::partition_by_affinity_domain);
 
@@ -67,8 +72,8 @@ void test_pvc(device &d) {
     auto sub_sub_devices = sub_device.create_sub_devices<
         info::partition_property::ext_intel_partition_by_cslice>();
     auto &sub_sub_device = sub_sub_devices[1];
-    assert(!PartitionableByAffinityDomain(sub_sub_device));
-    assert(!PartitionableByCSlice(sub_sub_device));
+    assert(!isPartitionableByAffinityDomain(sub_sub_device));
+    assert(!isPartitionableByCSlice(sub_sub_device));
     assert(sub_sub_device.get_info<info::device::partition_type_property>() ==
            info::partition_property::ext_intel_partition_by_cslice);
 
@@ -94,10 +99,38 @@ void test_pvc(device &d) {
   // CHECK-PVC: Test PVC End
 }
 
+void test_non_pvc(device d) {
+  bool IsPVC = [&]() {
+    if (!d.has(aspect::ext_intel_device_id))
+      return false;
+    return (d.get_info<ext::intel::info::device::device_id>() & 0xff0) == 0xbd0;
+  }();
+
+  if (IsPVC)
+    return;
+
+  // Non-PVC devices are not partitionable by CSlice at any level of
+  // partitioning.
+
+  while (true) {
+    assert(!isPartitionableByCSlice(d));
+
+    if (!isPartitionableByAffinityDomain(d))
+      // No more sub-devices.
+      break;
+
+    auto sub_devices = d.create_sub_devices<
+        info::partition_property::partition_by_affinity_domain>(
+        info::partition_affinity_domain::next_partitionable);
+    d = sub_devices[0];
+  }
+}
+
 int main() {
   device d;
 
   test_pvc(d);
+  test_non_pvc(d);
 
   return 0;
 }
