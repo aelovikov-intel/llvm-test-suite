@@ -15,7 +15,6 @@ static const bool ExposeCSliceInAffinityPartitioning = [] {
   return Flag ? std::atoi(Flag) != 0 : false;
 }();
 
-
 template <typename RangeTy, typename ElemTy>
 bool contains(RangeTy &&Range, const ElemTy &Elem) {
   return std::find(Range.begin(), Range.end(), Elem) != Range.end();
