@@ -1,11 +1,20 @@
 // RUN: %clangxx -fsycl -fsycl-targets=%sycl_triple %level_zero_options %s -o %t.out
 // RUN: env ZEX_NUMBER_OF_CCS=0:4 env ZE_DEBUG=1 %GPU_RUN_PLACEHOLDER %t.out 2>&1 %GPU_CHECK_PLACEHOLDER --check-prefixes=CHECK-PVC
+// RUN: env SYCL_PI_LEVEL_ZERO_EXPOSE_CSLICE_IN_AFFINITY_PARTITIONING=1 \
+// RUN:   env ZEX_NUMBER_OF_CCS=0:4 env ZE_DEBUG=1 %GPU_RUN_PLACEHOLDER %t.out 2>&1 %GPU_CHECK_PLACEHOLDER --check-prefixes=CHECK-PVC
 
 // Requires: level_zero
 
 #include <sycl/sycl.hpp>
 
 using namespace sycl;
+
+static const bool ExposeCSliceInAffinityPartitioning = [] {
+  const char *Flag =
+      std::getenv("SYCL_PI_LEVEL_ZERO_EXPOSE_CSLICE_IN_AFFINITY_PARTITIONING");
+  return Flag ? std::atoi(Flag) != 0 : false;
+}();
+
 
 template <typename RangeTy, typename ElemTy>
 bool contains(RangeTy &&Range, const ElemTy &Elem) {
@@ -53,7 +62,8 @@ void test_pvc(device &d) {
         info::partition_property::partition_by_affinity_domain>(
         info::partition_affinity_domain::next_partitionable);
     device &sub_device = sub_devices[1];
-    assert(!isPartitionableByAffinityDomain(sub_device));
+    assert(isPartitionableByAffinityDomain(sub_device) ==
+           ExposeCSliceInAffinityPartitioning);
     assert(isPartitionableByCSlice(sub_device));
     assert(sub_device.get_info<info::device::partition_type_property>() ==
            info::partition_property::partition_by_affinity_domain);
@@ -63,29 +73,53 @@ void test_pvc(device &d) {
         std::ignore = sub_device.create_sub_devices<
             info::partition_property::partition_by_affinity_domain>(
             info::partition_affinity_domain::next_partitionable);
-        assert(false && "Expected an exception to be thrown earlier!");
+        assert(ExposeCSliceInAffinityPartitioning &&
+               "Expected an exception to be thrown earlier!");
       } catch (sycl::exception &e) {
         assert(e.code() == errc::feature_not_supported);
       }
     }
 
-    auto sub_sub_devices = sub_device.create_sub_devices<
-        info::partition_property::ext_intel_partition_by_cslice>();
-    auto &sub_sub_device = sub_sub_devices[1];
-    assert(!isPartitionableByAffinityDomain(sub_sub_device));
-    assert(!isPartitionableByCSlice(sub_sub_device));
-    assert(sub_sub_device.get_info<info::device::partition_type_property>() ==
-           info::partition_property::ext_intel_partition_by_cslice);
+    {
+      auto sub_sub_devices = sub_device.create_sub_devices<
+          info::partition_property::ext_intel_partition_by_cslice>();
+      auto &sub_sub_device = sub_sub_devices[1];
+      assert(!isPartitionableByAffinityDomain(sub_sub_device));
+      assert(!isPartitionableByCSlice(sub_sub_device));
+      assert(sub_sub_device.get_info<info::device::partition_type_property>() ==
+             info::partition_property::ext_intel_partition_by_cslice);
 
-    {
-      queue q{sub_device};
-      // CHECK-PVC: [getZeQueue]: create queue ordinal = 0, index = 0 (round robin in [0, 0])
-      q.single_task([=]() {});
+      {
+        queue q{sub_device};
+        // CHECK-PVC: [getZeQueue]: create queue ordinal = 0, index = 0 (round robin in [0, 0])
+        q.single_task([=]() {});
+      }
+      {
+        queue q{sub_sub_device};
+        // CHECK-PVC: [getZeQueue]: create queue ordinal = 0, index = 1 (round robin in [1, 1])
+        q.single_task([=]() {});
+      }
     }
-    {
-      queue q{sub_sub_device};
-      // CHECK-PVC: [getZeQueue]: create queue ordinal = 0, index = 1 (round robin in [1, 1])
-      q.single_task([=]() {});
+
+    if (ExposeCSliceInAffinityPartitioning) {
+      auto sub_sub_devices = sub_device.create_sub_devices<
+          info::partition_property::partition_by_affinity_domain>(
+          info::partition_affinity_domain::next_partitionable);
+      auto &sub_sub_device = sub_sub_devices[1];
+      assert(!isPartitionableByAffinityDomain(sub_sub_device));
+      assert(!isPartitionableByCSlice(sub_sub_device));
+
+      // Note that we still report this sub-sub-device as created via
+      // partitioning by cslice. This is a known limitation that we won't
+      // address as the whole code path (exposing CSlice as sub-devices via
+      // partitioning by affinity domaing using
+      // SYCL_PI_LEVEL_ZERO_EXPOSE_CSLICE_IN_AFFINITY_PARTITIONING environment
+      // variable) is deprecated  and is going to be removed.
+      assert(sub_sub_device.get_info<info::device::partition_type_property>() ==
+             info::partition_property::ext_intel_partition_by_cslice);
+
+      // Not running as making FileCheck's check would be messy due to
+      // dynamic/runtime nature of the option.
     }
   } else {
     // Make FileCheck pass.
