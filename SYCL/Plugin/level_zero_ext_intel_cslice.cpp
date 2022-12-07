@@ -9,6 +9,7 @@
 
 using namespace sycl;
 
+static constexpr int NumCSlices = 4; // Specified in the RUN line.
 static const bool ExposeCSliceInAffinityPartitioning = [] {
   const char *Flag =
       std::getenv("SYCL_PI_LEVEL_ZERO_EXPOSE_CSLICE_IN_AFFINITY_PARTITIONING");
@@ -83,6 +84,7 @@ void test_pvc(device &d) {
       auto sub_sub_devices = sub_device.create_sub_devices<
           info::partition_property::ext_intel_partition_by_cslice>();
       auto &sub_sub_device = sub_sub_devices[1];
+      assert(sub_sub_devices.size() == NumCSlices);
       assert(!isPartitionableByAffinityDomain(sub_sub_device));
       assert(!isPartitionableByCSlice(sub_sub_device));
       assert(sub_sub_device.get_info<info::device::partition_type_property>() ==
