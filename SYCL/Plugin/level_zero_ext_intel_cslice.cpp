@@ -3,7 +3,7 @@
 // RUN: %GPU_RUN_PLACEHOLDER FileCheck %s --check-prefixes=CHECK-PVC < %t.default.log
 // RUN: env SYCL_PI_LEVEL_ZERO_EXPOSE_CSLICE_IN_AFFINITY_PARTITIONING=1 \
 // RUN:   env ZEX_NUMBER_OF_CCS=0:4 env ZE_DEBUG=1 %GPU_RUN_PLACEHOLDER %t.out> %t.compat.log 2>&1
-// RUN: %GPU_RUN_PLACEHOLDER FileCheck %s --check-prefixes=CHECK-PVC < %t.compat.log
+// RUN: %GPU_RUN_PLACEHOLDER FileCheck %s --check-prefixes=CHECK-PVC,CHECK-PVC-AFFINITY < %t.compat.log
 
 // Requires: level_zero
 
@@ -82,10 +82,8 @@ void test_pvc(device &d) {
       }
     }
 
-    {
-      auto sub_sub_devices = sub_device.create_sub_devices<
-          info::partition_property::ext_intel_partition_by_cslice>();
-      auto &sub_sub_device = sub_sub_devices[1];
+    auto VerifySubSubDevice = [&](auto &sub_sub_devices) {
+      device &sub_sub_device = sub_sub_devices[1];
       assert(sub_sub_devices.size() == NumCSlices);
       assert(!isPartitionableByAffinityDomain(sub_sub_device));
       assert(!isPartitionableByCSlice(sub_sub_device));
@@ -94,35 +92,28 @@ void test_pvc(device &d) {
 
       {
         queue q{sub_device};
-        // CHECK-PVC: [getZeQueue]: create queue ordinal = 0, index = 0 (round robin in [0, 0])
         q.single_task([=]() {});
       }
       {
         queue q{sub_sub_device};
-        // CHECK-PVC: [getZeQueue]: create queue ordinal = 0, index = 1 (round robin in [1, 1])
         q.single_task([=]() {});
       }
+      // CHECK-PVC:          [getZeQueue]: create queue ordinal = 0, index = 0 (round robin in [0, 0])
+      // CHECK-PVC:          [getZeQueue]: create queue ordinal = 0, index = 1 (round robin in [1, 1])
+      // CHECK-PVC-AFFINITY: [getZeQueue]: create queue ordinal = 0, index = 0 (round robin in [0, 0])
+      // CHECK-PVC-AFFINITY: [getZeQueue]: create queue ordinal = 0, index = 1 (round robin in [1, 1])
+    };
+    {
+      auto sub_sub_devices = sub_device.create_sub_devices<
+          info::partition_property::ext_intel_partition_by_cslice>();
+      VerifySubSubDevice(sub_sub_devices);
     }
 
     if (ExposeCSliceInAffinityPartitioning) {
       auto sub_sub_devices = sub_device.create_sub_devices<
           info::partition_property::partition_by_affinity_domain>(
           info::partition_affinity_domain::next_partitionable);
-      auto &sub_sub_device = sub_sub_devices[1];
-      assert(!isPartitionableByAffinityDomain(sub_sub_device));
-      assert(!isPartitionableByCSlice(sub_sub_device));
-
-      // Note that we still report this sub-sub-device as created via
-      // partitioning by cslice. This is a known limitation that we won't
-      // address as the whole code path (exposing CSlice as sub-devices via
-      // partitioning by affinity domaing using
-      // SYCL_PI_LEVEL_ZERO_EXPOSE_CSLICE_IN_AFFINITY_PARTITIONING environment
-      // variable) is deprecated  and is going to be removed.
-      assert(sub_sub_device.get_info<info::device::partition_type_property>() ==
-             info::partition_property::ext_intel_partition_by_cslice);
-
-      // Not running as making FileCheck's check would be messy due to
-      // dynamic/runtime nature of the option.
+      VerifySubSubDevice(sub_sub_devices);
     }
   } else {
     // Make FileCheck pass.
@@ -130,6 +121,10 @@ void test_pvc(device &d) {
     // clang-format off
     std::cout << "[getZeQueue]: create queue ordinal = 0, index = 0 (round robin in [0, 0])" << std::endl;
     std::cout << "[getZeQueue]: create queue ordinal = 0, index = 1 (round robin in [1, 1])" << std::endl;
+    if (ExposeCSliceInAffinityPartitioning) {
+      std::cout << "[getZeQueue]: create queue ordinal = 0, index = 0 (round robin in [0, 0])" << std::endl;
+      std::cout << "[getZeQueue]: create queue ordinal = 0, index = 1 (round robin in [1, 1])" << std::endl;
+    }
     // clang-format on
   }
   std::cout << "Test PVC End" << std::endl;
