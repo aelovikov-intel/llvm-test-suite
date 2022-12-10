@@ -1,7 +1,18 @@
 // RUN: %clangxx -fsycl -fsycl-targets=%sycl_triple %level_zero_options %s -o %t.out
+
 // RUN: env ZEX_NUMBER_OF_CCS=0:4 env ZE_DEBUG=1 %GPU_RUN_PLACEHOLDER %t.out > %t.default.log 2>&1
 // RUN: %GPU_RUN_PLACEHOLDER FileCheck %s --check-prefixes=CHECK-PVC < %t.default.log
+
 // RUN: env SYCL_PI_LEVEL_ZERO_EXPOSE_CSLICE_IN_AFFINITY_PARTITIONING=1 \
+// RUN:   env ZEX_NUMBER_OF_CCS=0:4 env ZE_DEBUG=1 %GPU_RUN_PLACEHOLDER %t.out> %t.compat.log 2>&1
+// RUN: %GPU_RUN_PLACEHOLDER FileCheck %s --check-prefixes=CHECK-PVC,CHECK-PVC-AFFINITY < %t.compat.log
+
+// Same, but using immediate commandlists:
+
+// RUN: env SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1 env ZEX_NUMBER_OF_CCS=0:4 env ZE_DEBUG=1 %GPU_RUN_PLACEHOLDER %t.out > %t.default.log 2>&1
+// RUN: %GPU_RUN_PLACEHOLDER FileCheck %s --check-prefixes=CHECK-PVC < %t.default.log
+
+// RUN: env SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1 env SYCL_PI_LEVEL_ZERO_EXPOSE_CSLICE_IN_AFFINITY_PARTITIONING=1 \
 // RUN:   env ZEX_NUMBER_OF_CCS=0:4 env ZE_DEBUG=1 %GPU_RUN_PLACEHOLDER %t.out> %t.compat.log 2>&1
 // RUN: %GPU_RUN_PLACEHOLDER FileCheck %s --check-prefixes=CHECK-PVC,CHECK-PVC-AFFINITY < %t.compat.log
 
@@ -87,8 +98,19 @@ void test_pvc(device &d) {
       assert(sub_sub_devices.size() == NumCSlices);
       assert(!isPartitionableByAffinityDomain(sub_sub_device));
       assert(!isPartitionableByCSlice(sub_sub_device));
+
+      // Note that we still report this sub-sub-device as created via
+      // partitioning by cslice even if it was partition by affinity domain.
+      // This is a known limitation that we won't address as the whole code path
+      // (exposing CSlice as sub-devices via partitioning by affinity domaing
+      // using SYCL_PI_LEVEL_ZERO_EXPOSE_CSLICE_IN_AFFINITY_PARTITIONING
+      // environment variable) is deprecated  and is going to be removed.
       assert(sub_sub_device.get_info<info::device::partition_type_property>() ==
              info::partition_property::ext_intel_partition_by_cslice);
+
+      assert(sub_sub_device.get_info<info::device::max_compute_units>() *
+                 NumCSlices ==
+             sub_device.get_info<info::device::max_compute_units>());
 
       {
         queue q{sub_device};
