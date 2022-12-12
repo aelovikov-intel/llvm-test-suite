@@ -35,9 +35,7 @@ void test_pvc(device &d) {
         4);
 
     auto sub_sub_devices = sub_device.create_sub_devices<
-        // TODO: Update using sycl_ext_intel_cslice proposal.
-        info::partition_property::partition_by_affinity_domain>(
-        info::partition_affinity_domain::next_partitionable);
+        info::partition_property::ext_intel_partition_by_cslice>();
     device &sub_sub_device = sub_sub_devices[1];
     assert(
         sub_sub_device
