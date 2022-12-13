@@ -22,7 +22,8 @@
 
 using namespace sycl;
 
-static constexpr int NumCSlices = 4; // Specified in the RUN line.
+// Specified in the RUN line.
+static constexpr int NumCSlices = 4;
 static const bool ExposeCSliceInAffinityPartitioning = [] {
   const char *Flag =
       std::getenv("SYCL_PI_LEVEL_ZERO_EXPOSE_CSLICE_IN_AFFINITY_PARTITIONING");
