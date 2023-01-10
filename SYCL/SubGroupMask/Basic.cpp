@@ -27,7 +27,7 @@ int main() {
     int Res = 0;
     {
       buffer resbuf(&Res, range<1>(1));
-      buffer<int> MyBuf(16);
+      buffer<uint32_t> MyBuf(64);
 
       Queue
           .submit([&](handler &cgh) {
@@ -64,19 +64,43 @@ int main() {
                     res |= (r != 0xaaaaaa00) << 4;
                     (gmask_gid2 >> 4).extract_bits(r);
                     res |= (r != 0x0aaaaaa0) << 5;
+
+                    int my_idx = 0;
+                    unsigned char *gmask3_ptr = (unsigned char *)(&gmask_gid3);
+                    my_acc[my_idx++] = sizeof(gmask_gid3);
+                    my_acc[my_idx++] = 0x42;
+
+                    for (int j = 0; j < sizeof(gmask_gid3); ++j)
+                      my_acc[my_idx++] = gmask3_ptr[j];
+                    my_acc[my_idx++] = 0x42;
+
                     gmask_gid3.insert_bits((char)0b01010101, 8);
+
+                    for (int j = 0; j < sizeof(gmask_gid3); ++j)
+                      my_acc[my_idx++] = gmask3_ptr[j];
+                    my_acc[my_idx++] = 0x42;
+
                     res |= (!gmask_gid3[8] || gmask_gid3[9] ||
                             !gmask_gid3[10] || gmask_gid3[11])
                            << 6;
+
+                    for (int j = 0; j < sizeof(gmask_gid3); ++j)
+                      my_acc[my_idx++] = gmask3_ptr[j];
+                    my_acc[my_idx++] = 0x42;
+
                     marray<unsigned char, 6> mr{1};
                     gmask_gid3.extract_bits(mr);
+
+                    for (int j = 0; j < 6; ++j)
+                      my_acc[my_idx++] = mr[j];
+                    my_acc[my_idx++] = 0x42;
+
                     bool b = (mr[0] != 0xb6 || mr[1] != 0x55 || mr[2] != 0xdb ||
                               mr[3] != 0xb6 || mr[4] || mr[5]);
                     res |= b << 7;
-                    my_acc[0] = (int)b;
-                    for (int j = 0; j < 6; ++j)
-                      my_acc[j + 1] = mr[j];
-                    my_acc[7] = 0x42;
+                    my_acc[my_idx++] = (int)b;
+                    my_acc[my_idx++] = 0x42;
+                    // expected: b6 55 db b6 0 0 0 42 0 0 0 0 0 0 0 0
                     res |= (gmask_gid2[30] || !gmask_gid2[31]) << 8;
                     gmask_gid3[0] = gmask_gid3[3] = gmask_gid3[6] = true;
                     gmask_gid3.extract_bits(r);
@@ -98,7 +122,12 @@ int main() {
           .wait();
       host_accessor host_acc{MyBuf};
       for (int elem : host_acc) {
-        std::cout << " " << std::hex << elem;
+        std::cout << " " << std::hex << elem << " (" << std::bitset<8>(elem)
+                  << ")";
+        if (elem == 0x20)
+          std::cout << "\n       ";
+        if (elem == 0x42)
+          std::cout << std::endl;
       }
       std::cout << std::endl;
     }
