@@ -1,4 +1,4 @@
-// RUN: %clangxx -fsycl -fsycl-targets=%sycl_triple %s -o %t.out -O0
+// RUN: %clangxx -fsycl -fsycl-targets=%sycl_triple %s -o %t.out -Od
 // RUN: %GPU_RUN_PLACEHOLDER %t.out
 // RUN: %clangxx -fsycl -fsycl-targets=%sycl_triple %s -o %t.out
 // RUN: %GPU_RUN_PLACEHOLDER %t.out
@@ -6,6 +6,285 @@
 #include <iostream>
 #include <sycl/sycl.hpp>
 using namespace sycl;
+template <typename Type, std::size_t NumElements> struct my_marray {
+  using DataT = Type;
+
+  using value_type = Type;
+  using reference = Type &;
+  using const_reference = const Type &;
+  using iterator = Type *;
+  using const_iterator = const Type *;
+
+  value_type MData[NumElements];
+
+  template <class...> struct conjunction : std::true_type {};
+  template <class B1, class... tail>
+  struct conjunction<B1, tail...>
+      : std::conditional<bool(B1::value), conjunction<tail...>, B1>::type {};
+
+  // TypeChecker is needed for (const ArgTN &... Args) ctor to validate Args.
+  template <typename T, typename DataT_>
+  struct TypeChecker : std::is_convertible<T, DataT_> {};
+
+  // Shortcuts for Args validation in (const ArgTN &... Args) ctor.
+  template <typename... ArgTN>
+  using EnableIfSuitableTypes = typename std::enable_if<
+      conjunction<TypeChecker<ArgTN, DataT>...>::value>::type;
+
+  constexpr void initialize_data(const Type &Arg) {
+    for (size_t i = 0; i < NumElements; ++i) {
+      MData[i] = Arg;
+    }
+  }
+
+  constexpr my_marray() : MData{} {}
+
+  explicit constexpr my_marray(const Type &Arg) : MData{Arg} {
+    initialize_data(Arg);
+  }
+
+  template <
+      typename... ArgTN, typename = EnableIfSuitableTypes<ArgTN...>,
+      typename = typename std::enable_if<sizeof...(ArgTN) == NumElements>::type>
+  constexpr my_marray(const ArgTN &...Args)
+      : MData{static_cast<Type>(Args)...} {}
+
+  constexpr my_marray(const my_marray<Type, NumElements> &Rhs) = default;
+
+  constexpr my_marray(my_marray<Type, NumElements> &&Rhs) = default;
+
+  // Available only when: NumElements == 1
+  template <std::size_t Size = NumElements,
+            typename = typename std::enable_if<Size == 1>>
+  operator Type() const {
+    return MData[0];
+  }
+
+  static constexpr std::size_t size() noexcept { return NumElements; }
+
+  // subscript operator
+  reference operator[](std::size_t index) { return MData[index]; }
+
+  const_reference operator[](std::size_t index) const { return MData[index]; }
+
+  my_marray &operator=(const my_marray<Type, NumElements> &Rhs) = default;
+
+  // broadcasting operator
+  my_marray &operator=(const Type &Rhs) {
+    for (std::size_t I = 0; I < NumElements; ++I) {
+      MData[I] = Rhs;
+    }
+    return *this;
+  }
+
+  // iterator functions
+  iterator begin() { return MData; }
+
+  const_iterator begin() const { return MData; }
+
+  iterator end() { return MData + NumElements; }
+
+  const_iterator end() const { return MData + NumElements; }
+
+#ifdef __SYCL_BINOP
+#error "Undefine __SYCL_BINOP macro"
+#endif
+
+#ifdef __SYCL_BINOP_INTEGRAL
+#error "Undefine __SYCL_BINOP_INTEGRAL macro"
+#endif
+
+#define __SYCL_BINOP(BINOP, OPASSIGN)                                          \
+  friend my_marray operator BINOP(const my_marray &Lhs,                        \
+                                  const my_marray &Rhs) {                      \
+    my_marray Ret;                                                             \
+    for (size_t I = 0; I < NumElements; ++I) {                                 \
+      Ret[I] = Lhs[I] BINOP Rhs[I];                                            \
+    }                                                                          \
+    return Ret;                                                                \
+  }                                                                            \
+  template <typename T>                                                        \
+  friend typename std::enable_if<                                              \
+      std::is_convertible<DataT, T>::value &&                                  \
+          (std::is_fundamental<T>::value ||                                    \
+           std::is_same<typename std::remove_const<T>::type, half>::value),    \
+      my_marray>::type                                                         \
+  operator BINOP(const my_marray &Lhs, const T &Rhs) {                         \
+    return Lhs BINOP my_marray(static_cast<DataT>(Rhs));                       \
+  }                                                                            \
+  friend my_marray &operator OPASSIGN(my_marray &Lhs, const my_marray &Rhs) {  \
+    Lhs = Lhs BINOP Rhs;                                                       \
+    return Lhs;                                                                \
+  }                                                                            \
+  template <std::size_t Num = NumElements>                                     \
+  friend typename std::enable_if<Num != 1, my_marray &>::type                  \
+  operator OPASSIGN(my_marray &Lhs, const DataT &Rhs) {                        \
+    Lhs = Lhs BINOP my_marray(Rhs);                                            \
+    return Lhs;                                                                \
+  }
+
+#define __SYCL_BINOP_INTEGRAL(BINOP, OPASSIGN)                                 \
+  template <typename T = DataT,                                                \
+            typename = std::enable_if<std::is_integral<T>::value, my_marray>>  \
+  friend my_marray operator BINOP(const my_marray &Lhs,                        \
+                                  const my_marray &Rhs) {                      \
+    my_marray Ret;                                                             \
+    for (size_t I = 0; I < NumElements; ++I) {                                 \
+      Ret[I] = Lhs[I] BINOP Rhs[I];                                            \
+    }                                                                          \
+    return Ret;                                                                \
+  }                                                                            \
+  template <typename T, typename BaseT = DataT>                                \
+  friend typename std::enable_if<std::is_convertible<T, DataT>::value &&       \
+                                     std::is_integral<T>::value &&             \
+                                     std::is_integral<BaseT>::value,           \
+                                 my_marray>::type                              \
+  operator BINOP(const my_marray &Lhs, const T &Rhs) {                         \
+    return Lhs BINOP my_marray(static_cast<DataT>(Rhs));                       \
+  }                                                                            \
+  template <typename T = DataT,                                                \
+            typename = std::enable_if<std::is_integral<T>::value, my_marray>>  \
+  friend my_marray &operator OPASSIGN(my_marray &Lhs, const my_marray &Rhs) {  \
+    Lhs = Lhs BINOP Rhs;                                                       \
+    return Lhs;                                                                \
+  }                                                                            \
+  template <std::size_t Num = NumElements, typename T = DataT>                 \
+  friend typename std::enable_if<Num != 1 && std::is_integral<T>::value,       \
+                                 my_marray &>::type                            \
+  operator OPASSIGN(my_marray &Lhs, const DataT &Rhs) {                        \
+    Lhs = Lhs BINOP my_marray(Rhs);                                            \
+    return Lhs;                                                                \
+  }
+
+  __SYCL_BINOP(+, +=)
+  __SYCL_BINOP(-, -=)
+  __SYCL_BINOP(*, *=)
+  __SYCL_BINOP(/, /=)
+
+  __SYCL_BINOP_INTEGRAL(%, %=)
+  __SYCL_BINOP_INTEGRAL(|, |=)
+  __SYCL_BINOP_INTEGRAL(&, &=)
+  __SYCL_BINOP_INTEGRAL(^, ^=)
+  __SYCL_BINOP_INTEGRAL(>>, >>=)
+  __SYCL_BINOP_INTEGRAL(<<, <<=)
+#undef __SYCL_BINOP
+#undef __SYCL_BINOP_INTEGRAL
+
+#ifdef __SYCL_RELLOGOP
+#error "Undefine __SYCL_RELLOGOP macro"
+#endif
+
+#ifdef __SYCL_RELLOGOP_INTEGRAL
+#error "Undefine __SYCL_RELLOGOP_INTEGRAL macro"
+#endif
+
+#define __SYCL_RELLOGOP(RELLOGOP)                                              \
+  friend my_marray<bool, NumElements> operator RELLOGOP(                       \
+      const my_marray &Lhs, const my_marray &Rhs) {                            \
+    my_marray<bool, NumElements> Ret;                                          \
+    for (size_t I = 0; I < NumElements; ++I) {                                 \
+      Ret[I] = Lhs[I] RELLOGOP Rhs[I];                                         \
+    }                                                                          \
+    return Ret;                                                                \
+  }                                                                            \
+  template <typename T>                                                        \
+  friend typename std::enable_if<std::is_convertible<T, DataT>::value &&       \
+                                     (std::is_fundamental<T>::value ||         \
+                                      std::is_same<T, half>::value),           \
+                                 my_marray<bool, NumElements>>::type           \
+  operator RELLOGOP(const my_marray &Lhs, const T &Rhs) {                      \
+    return Lhs RELLOGOP my_marray(static_cast<const DataT &>(Rhs));            \
+  }
+
+#define __SYCL_RELLOGOP_INTEGRAL(RELLOGOP)                                     \
+  template <typename T = DataT>                                                \
+  friend typename std::enable_if<std::is_integral<T>::value,                   \
+                                 my_marray<bool, NumElements>>::type           \
+  operator RELLOGOP(const my_marray &Lhs, const my_marray &Rhs) {              \
+    my_marray<bool, NumElements> Ret;                                          \
+    for (size_t I = 0; I < NumElements; ++I) {                                 \
+      Ret[I] = Lhs[I] RELLOGOP Rhs[I];                                         \
+    }                                                                          \
+    return Ret;                                                                \
+  }                                                                            \
+  template <typename T, typename BaseT = DataT>                                \
+  friend typename std::enable_if<std::is_convertible<T, DataT>::value &&       \
+                                     std::is_integral<T>::value &&             \
+                                     std::is_integral<BaseT>::value,           \
+                                 my_marray<bool, NumElements>>::type           \
+  operator RELLOGOP(const my_marray &Lhs, const T &Rhs) {                      \
+    return Lhs RELLOGOP my_marray(static_cast<const DataT &>(Rhs));            \
+  }
+
+  __SYCL_RELLOGOP(==)
+  __SYCL_RELLOGOP(!=)
+  __SYCL_RELLOGOP(>)
+  __SYCL_RELLOGOP(<)
+  __SYCL_RELLOGOP(>=)
+  __SYCL_RELLOGOP(<=)
+
+  __SYCL_RELLOGOP_INTEGRAL(&&)
+  __SYCL_RELLOGOP_INTEGRAL(||)
+
+#undef __SYCL_RELLOGOP
+#undef __SYCL_RELLOGOP_INTEGRAL
+
+#ifdef __SYCL_UOP
+#error "Undefine __SYCL_UOP macro"
+#endif
+
+#define __SYCL_UOP(UOP, OPASSIGN)                                              \
+  friend my_marray &operator UOP(my_marray &Lhs) {                             \
+    Lhs OPASSIGN 1;                                                            \
+    return Lhs;                                                                \
+  }                                                                            \
+  friend my_marray operator UOP(my_marray &Lhs, int) {                         \
+    my_marray Ret(Lhs);                                                        \
+    Lhs OPASSIGN 1;                                                            \
+    return Ret;                                                                \
+  }
+
+  __SYCL_UOP(++, +=)
+  __SYCL_UOP(--, -=)
+#undef __SYCL_UOP
+
+  // Available only when: dataT != cl_float && dataT != cl_double
+  // && dataT != cl_half
+  template <typename T = DataT>
+  friend typename std::enable_if<std::is_integral<T>::value, my_marray>::type
+  operator~(const my_marray &Lhs) {
+    my_marray Ret;
+    for (size_t I = 0; I < NumElements; ++I) {
+      Ret[I] = ~Lhs[I];
+    }
+    return Ret;
+  }
+
+  friend my_marray<bool, NumElements> operator!(const my_marray &Lhs) {
+    my_marray<bool, NumElements> Ret;
+    for (size_t I = 0; I < NumElements; ++I) {
+      Ret[I] = !Lhs[I];
+    }
+    return Ret;
+  }
+
+  friend my_marray operator+(const my_marray &Lhs) {
+    my_marray Ret;
+    for (size_t I = 0; I < NumElements; ++I) {
+      Ret[I] = +Lhs[I];
+    }
+    return Ret;
+  }
+
+  friend my_marray operator-(const my_marray &Lhs) {
+    my_marray Ret;
+    for (size_t I = 0; I < NumElements; ++I) {
+      Ret[I] = -Lhs[I];
+    }
+    return Ret;
+  }
+};
+
 struct my_sub_group_mask {
   static constexpr size_t max_bits = 32;
 
@@ -88,12 +367,12 @@ struct my_sub_group_mask {
   }
 
   /* The bits are stored in the memory in the following way:
-  marray id |     0     |     1     |     2     |     3     |...
+  my_marray id |     0     |     1     |     2     |     3     |...
   bit id    |7   ..    0|15   ..   8|23   ..  16|31  ..   24|...
   */
   template <typename Type, size_t Size,
             typename = sycl::detail::enable_if_t<std::is_integral<Type>::value>>
-  void insert_bits(const marray<Type, Size> &bits, id<1> pos = 0) {
+  void insert_bits(const my_marray<Type, Size> &bits, id<1> pos = 0) {
     size_t cur_pos = pos.get(0);
     for (auto elem : bits) {
       if (cur_pos < size()) {
@@ -124,7 +403,7 @@ struct my_sub_group_mask {
 
   template <typename Type, size_t Size,
             typename = sycl::detail::enable_if_t<std::is_integral<Type>::value>>
-  void extract_bits(marray<Type, Size> &bits, id<1> pos = 0) const {
+  void extract_bits(my_marray<Type, Size> &bits, id<1> pos = 0) const {
     size_t cur_pos = pos.get(0);
     for (auto &elem : bits) {
       if (cur_pos < size()) {
@@ -138,7 +417,7 @@ struct my_sub_group_mask {
 
   template <typename Type, size_t Size,
             typename = sycl::detail::enable_if_t<std::is_integral<Type>::value>>
-  void extract_bits_no_range_for(marray<Type, Size> &bits,
+  void extract_bits_no_range_for(my_marray<Type, Size> &bits,
                                  id<1> pos = 0) const {
     size_t cur_pos = pos.get(0);
     for (int j = 0; j < 6; ++j) {
@@ -154,7 +433,7 @@ struct my_sub_group_mask {
 
   template <typename Type, size_t Size,
             typename = sycl::detail::enable_if_t<std::is_integral<Type>::value>>
-  void extract_bits_no_range_for_no_ref(marray<Type, Size> &bits,
+  void extract_bits_no_range_for_no_ref(my_marray<Type, Size> &bits,
                                         id<1> pos = 0) const {
     size_t cur_pos = pos.get(0);
     for (int j = 0; j < 6; ++j) {
@@ -275,7 +554,7 @@ constexpr int global_size = 128;
 constexpr int local_size = 32;
 int main() {
   queue q;
-  buffer<uint32_t> MyBuf(1024);
+  buffer<uint64_t> MyBuf(1024);
   {
     q.submit([&](handler &cgh) {
        accessor my_acc{MyBuf, cgh};
@@ -284,7 +563,7 @@ int main() {
          uint32_t Magic = 0xb6db55b6;
          my_sub_group_mask my_mask(Magic, 32);
          {
-           marray<unsigned char, 6> my_mr{1};
+           my_marray<unsigned char, 6> my_mr{1};
            my_mask.extract_bits(my_mr);
            for (int j = 0; j < 6; ++j)
              my_acc[my_idx++] = my_mr[j];
@@ -292,7 +571,9 @@ int main() {
          }
          {
            size_t cur_pos = 0;
-           marray<unsigned char, 6> my_mr{1};
+           my_marray<unsigned char, 6> my_mr{1};
+           my_acc[my_idx++] = reinterpret_cast<uintptr_t>(&my_mr.MData[0]);
+           my_acc[my_idx++] = 0x42;
            for (auto &elem : my_mr) {
              if (cur_pos < my_mask.size()) {
                my_mask.extract_bits(elem, cur_pos);
@@ -300,11 +581,14 @@ int main() {
              } else {
                elem = 0;
              }
+             my_acc[my_idx++] = reinterpret_cast<uintptr_t>(&elem);
              my_acc[my_idx++] = elem;
            }
            my_acc[my_idx++] = 0x42;
-           for (int j = 0; j < 6; ++j)
+           for (int j = 0; j < 6; ++j) {
+             my_acc[my_idx++] = reinterpret_cast<uintptr_t>(&my_mr[j]);
              my_acc[my_idx++] = my_mr[j];
+           }
            my_acc[my_idx++] = 0x42;
          }
          my_acc[my_idx++] = 0x42;
@@ -325,3 +609,20 @@ int main() {
   std::cout << std::endl;
   return 1;
 }
+
+#if 0
+Bad
+ b6 (10110110) 55 (01010101) db (11011011) b6 (10110110) 0 (00000000) 0 (00000000) 42 (01000010)
+ b6 (10110110) 55 (01010101) db (11011011) b6 (10110110) 0 (00000000) 0 (00000000) 42 (01000010)
+ b6 (10110110) 1 (00000001) 1 (00000001) 1 (00000001) 1 (00000001) 1 (00000001) 42 (01000010)
+ 42 (01000010)
+ 142 (01000010)
+
+
+Good
+ b6 (10110110) 55 (01010101) db (11011011) b6 (10110110) 0 (00000000) 0 (00000000) 42 (01000010)
+ b6 (10110110) 55 (01010101) db (11011011) b6 (10110110) 0 (00000000) 0 (00000000) 42 (01000010)
+ b6 (10110110) 55 (01010101) db (11011011) b6 (10110110) 0 (00000000) 0 (00000000) 42 (01000010)
+ 42 (01000010)
+ 142 (01000010)
+#endif
