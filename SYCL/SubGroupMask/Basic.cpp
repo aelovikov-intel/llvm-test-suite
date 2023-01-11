@@ -146,6 +146,37 @@ struct my_sub_group_mask {
     }
   }
 
+  template <typename Type, size_t Size,
+            typename = sycl::detail::enable_if_t<std::is_integral<Type>::value>>
+  void extract_bits_no_range_for(marray<Type, Size> &bits, id<1> pos = 0) const {
+    size_t cur_pos = pos.get(0);
+    for (int j = 0; j<6; ++j) {
+      Type &elem = bits[j];
+      if (cur_pos < size()) {
+        this->extract_bits(elem, cur_pos);
+        cur_pos += sizeof(Type) * CHAR_BIT;
+      } else {
+        elem = 0;
+      }
+    }
+  }
+
+  template <typename Type, size_t Size,
+            typename = sycl::detail::enable_if_t<std::is_integral<Type>::value>>
+  void extract_bits_no_range_for_no_ref(marray<Type, Size> &bits, id<1> pos = 0) const {
+    size_t cur_pos = pos.get(0);
+    for (int j = 0; j<6; ++j) {
+      Type elem;
+      if (cur_pos < size()) {
+        this->extract_bits(elem, cur_pos);
+        cur_pos += sizeof(Type) * CHAR_BIT;
+      } else {
+        elem = 0;
+      }
+      bits[j] = elem;
+    }
+  }
+
   void set() { Bits = valuable_bits(bits_num); }
   void set(id<1> id, bool value = true) { operator[](id) = value; }
   void reset() { Bits = uint32_t{0}; }
@@ -274,7 +305,23 @@ int main() {
                   auto gmask_gid3 = ext::oneapi::group_ballot(
                       NdItem.get_sub_group(), GID % 3);
 
+                  int my_idx = 0;
+                  unsigned char *gmask2_ptr = (unsigned char *)(&gmask_gid2);
+                  unsigned char *gmask3_ptr = (unsigned char *)(&gmask_gid3);
                   if (!GID) {
+                    my_acc[my_idx++] = sizeof(gmask_gid2);
+                    my_acc[my_idx++] = sizeof(gmask_gid3);
+                    my_acc[my_idx++] = 0x42;
+
+                    for (int j = 0; j < sizeof(gmask_gid2); ++j)
+                      my_acc[my_idx++] = gmask2_ptr[j];
+                    my_acc[my_idx++] = 0x42;
+
+                    for (int j = 0; j < sizeof(gmask_gid3); ++j)
+                      my_acc[my_idx++] = gmask3_ptr[j];
+                    my_acc[my_idx++] = 0x42;
+                    my_acc[my_idx++] = 0x42;
+
                     int res = 0;
 
                     for (size_t i = 0; i < SG.get_max_local_range()[0]; i++) {
@@ -293,19 +340,15 @@ int main() {
                     (gmask_gid2 >> 4).extract_bits(r);
                     res |= (r != 0x0aaaaaa0) << 5;
 
-                    int my_idx = 0;
-                    unsigned char *gmask3_ptr = (unsigned char *)(&gmask_gid3);
-                    my_acc[my_idx++] = sizeof(gmask_gid3);
-                    my_acc[my_idx++] = 0x42;
-
-                    for (int j = 0; j < sizeof(gmask_gid3); ++j)
-                      my_acc[my_idx++] = gmask3_ptr[j];
-                    my_acc[my_idx++] = 0x42;
-
                     gmask_gid3.insert_bits((char)0b01010101, 8);
 
+                    for (int j = 0; j < sizeof(gmask_gid2); ++j)
+                      my_acc[my_idx++] = gmask2_ptr[j];
+                    my_acc[my_idx++] = 0x42;
+
                     for (int j = 0; j < sizeof(gmask_gid3); ++j)
                       my_acc[my_idx++] = gmask3_ptr[j];
+                    my_acc[my_idx++] = 0x42;
                     my_acc[my_idx++] = 0x42;
 
                     res |= (!gmask_gid3[8] || gmask_gid3[9] ||
@@ -329,14 +372,29 @@ int main() {
                     my_acc[my_idx++] = (int)b;
                     my_acc[my_idx++] = 0x42;
 
-                    my_acc[my_idx++] = 0x43;
-                    my_acc[my_idx++] = 0x42;
                     uint32_t Magic = 0xb6db55b6;
                     my_sub_group_mask my_mask(Magic, 32);
-                    marray<unsigned char, 6> my_mr{1};
-                    my_mask.extract_bits(my_mr);
-                    for (int j = 0; j < 6; ++j)
-                      my_acc[my_idx++] = mr[j];
+                    {
+                      marray<unsigned char, 6> my_mr{1};
+                      my_mask.extract_bits_no_range_for(my_mr);
+                      for (int j = 0; j < 6; ++j)
+                        my_acc[my_idx++] = my_mr[j];
+                      my_acc[my_idx++] = 0x42;
+                    }
+                    {
+                      marray<unsigned char, 6> my_mr{1};
+                      my_mask.extract_bits(my_mr);
+                      for (int j = 0; j < 6; ++j)
+                        my_acc[my_idx++] = my_mr[j];
+                      my_acc[my_idx++] = 0x42;
+                    }
+                    {
+                      marray<unsigned char, 6> my_mr{1};
+                      my_mask.extract_bits_no_range_for_no_ref(my_mr);
+                      for (int j = 0; j < 6; ++j)
+                        my_acc[my_idx++] = my_mr[j];
+                      my_acc[my_idx++] = 0x42;
+                    }
                     my_acc[my_idx++] = 0x42;
 
                     for (int j = 0; j < 6; ++j) {
@@ -345,6 +403,7 @@ int main() {
                       my_acc[my_idx++] = b;
                     }
                     my_acc[my_idx++] = 0x42;
+
                     // expected: b6 55 db b6 0 0 0 42 0 0 0 0 0 0 0 0
                     res |= (gmask_gid2[30] || !gmask_gid2[31]) << 8;
                     gmask_gid3[0] = gmask_gid3[3] = gmask_gid3[6] = true;
@@ -381,7 +440,7 @@ int main() {
     }
     if (Res) {
       std::cout << "Unexpected result for sub_group_mask operation: " << Res
-                << std::endl;
+                << " " << std::bitset<16>(Res) << std::endl;
       exit(1);
     }
   } catch (exception e) {
@@ -421,6 +480,43 @@ good
  b6 (10110110) 55 (01010101) db (11011011) b6 (10110110) 0 (00000000) 0 (00000000) 42 (01000010)
  0 (00000000) 42 (01000010)
  0 (00000000) 0 (00000000)
+Test passed.
+
+#endif
+
+
+#if 0
+Bad
+[2023-01-10T23:18:54.754Z] # command output:
+[2023-01-10T23:18:54.754Z]  10 (00010000) 42 (01000010)
+[2023-01-10T23:18:54.754Z]  b6 (10110110) 6d (01101101) db (11011011) b6 (10110110) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 20 (00100000)
+[2023-01-10T23:18:54.754Z]         0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 42 (01000010)
+[2023-01-10T23:18:54.754Z]  b6 (10110110) 55 (01010101) db (11011011) b6 (10110110) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 20 (00100000)
+[2023-01-10T23:18:54.754Z]         0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 42 (01000010)
+[2023-01-10T23:18:54.754Z]  b6 (10110110) 55 (01010101) db (11011011) b6 (10110110) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 20 (00100000)
+[2023-01-10T23:18:54.754Z]         0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 42 (01000010)
+[2023-01-10T23:18:54.754Z]  b6 (10110110) 1 (00000001) 1 (00000001) 1 (00000001) 1 (00000001) 1 (00000001) 42 (01000010)
+[2023-01-10T23:18:54.754Z]  1 (00000001) 42 (01000010)
+[2023-01-10T23:18:54.754Z]  43 (01000011) 42 (01000010)
+[2023-01-10T23:18:54.754Z]  b6 (10110110) 1 (00000001) 1 (00000001) 1 (00000001) 1 (00000001) 1 (00000001) 42 (01000010)
+[2023-01-10T23:18:54.754Z]  b6 (10110110) 55 (01010101) db (11011011) b6 (10110110) 0 (00000000) 0 (00000000) 42 (01000010)
+[2023-01-10T23:18:54.754Z]  142 (01000010)
+[2023-01-10T23:18:54.754Z] Unexpected result for sub_group_mask operation: 80
+
+Good
+ 10 (00010000) 42 (01000010)
+ b6 (10110110) 6d (01101101) db (11011011) b6 (10110110) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 20 (00100000)
+        0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 42 (01000010)
+ b6 (10110110) 55 (01010101) db (11011011) b6 (10110110) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 20 (00100000)
+        0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 42 (01000010)
+ b6 (10110110) 55 (01010101) db (11011011) b6 (10110110) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 20 (00100000)
+        0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 0 (00000000) 42 (01000010)
+ b6 (10110110) 55 (01010101) db (11011011) b6 (10110110) 0 (00000000) 0 (00000000) 42 (01000010)
+ 0 (00000000) 42 (01000010)
+ 43 (01000011) 42 (01000010)
+ b6 (10110110) 55 (01010101) db (11011011) b6 (10110110) 0 (00000000) 0 (00000000) 42 (01000010)
+ b6 (10110110) 55 (01010101) db (11011011) b6 (10110110) 0 (00000000) 0 (00000000) 42 (01000010)
+ 142 (01000010)
 Test passed.
 
 #endif
