@@ -1,3 +1,4 @@
+// RUN: sycl-ls --verbose
 // RUN: %clangxx -fsycl -fsycl-targets=%sycl_triple %s -o %t.out
 // RUN: %GPU_RUN_PLACEHOLDER %t.out
 
@@ -567,6 +568,26 @@ int main() {
              my_acc[my_idx++] = my_mr[j];
            my_acc[my_idx++] = 0x42;
          }
+         {
+           size_t cur_pos = 0;
+           my_marray<unsigned char, 6> my_mr{1};
+           my_acc[my_idx++] = 0x42;
+           for (auto &elem : my_mr) {
+             if (cur_pos < my_mask.size()) {
+               my_mask.extract_bits(elem, cur_pos);
+               cur_pos += CHAR_BIT;
+             } else {
+               elem = 0;
+             }
+             my_acc[my_idx++] = elem;
+           }
+           my_acc[my_idx++] = 0x42;
+           for (int j = 0; j < 6; ++j) {
+             my_acc[my_idx++] = my_mr[j];
+           }
+           my_acc[my_idx++] = 0x42;
+         }
+         my_acc[my_idx++] = 0x42;
          {
            size_t cur_pos = 0;
            my_marray<unsigned char, 6> my_mr{1};
