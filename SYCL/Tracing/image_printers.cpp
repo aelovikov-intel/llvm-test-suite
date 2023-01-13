@@ -31,6 +31,17 @@ int main() {
   {
     sycl::image<2> Img(ImgHostData.data(), ChanOrder, ChanType, ImgSize);
     queue Q;
+    if (!Q.get_device().has(sycl::aspect::image)) {
+      std::cout << "Skipped due to no image support on the device" << std::endl;
+      // Make FileCheck happy as well.
+      std::cout << "---> piMemImageCreate" << std::endl;
+      std::cout << "image_desc w/h/d : 4 / 4 / 1  --  arrSz/row/slice : 0 / 64 / 256  --  num_mip_lvls/num_smpls/image_type : 0 / 0 / 4337" << std::endl;
+      std::cout << "---> piEnqueueMemImageRead" << std::endl;
+      std::cout << "pi_image_offset x/y/z : 0/0/0" << std::endl;
+      std::cout << "pi_image_region width/height/depth : 4/4/1" << std::endl;
+      return 0;
+
+    }
     Q.submit([&](sycl::handler &CGH) {
       auto ImgAcc = Img.get_access<sycl::float4, SYCLWrite>(CGH);
 

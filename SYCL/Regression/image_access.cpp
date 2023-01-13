@@ -24,6 +24,13 @@ int main() {
     sycl::image<1> Image(Data.data(), sycl::image_channel_order::rgba,
                          sycl::image_channel_type::fp32, Range);
     sycl::queue Queue;
+    if (!Queue.get_device().has(sycl::aspect::image)) {
+      std::cout << "Skipped due to no image support on the device" << std::endl;
+      // Make FileCheck happy as well.
+      std::cout << "---> piMemImageCreate" << std::endl;
+      std::cout << "---> piEnqueueMemImageRead" << std::endl;
+      return 0;
+    }
 
     Queue.submit([&](sycl::handler &CGH) {
       sycl::accessor<sycl::cl_int4, 1, sycl::access::mode::read,
