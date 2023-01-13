@@ -153,6 +153,10 @@ int main() {
               << std::endl;
     return 0;
   }
+  if (!Dev.has(s::aspect::image)) {
+    std::cout << "Skipped due to no image support on the device" << std::endl;
+    return 0;
+  }
   // Checking only for dimension=1.
   // create image:
   char HostPtr[100];

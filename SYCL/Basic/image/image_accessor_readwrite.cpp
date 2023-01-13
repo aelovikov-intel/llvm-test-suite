@@ -268,6 +268,10 @@ template <> void check<s::cl_float4>(char *HostPtr) {
 };
 
 int main() {
+  if (!s::device{}.has(s::aspect::image)) {
+    std::cout << "Skipped due to no image support on the device" << std::endl;
+    return 0;
+  }
   // Checking only for dimension=1.
   // 4 datatypes possible: s::cl_uint4, s::cl_int4, s::cl_float4, s::cl_half4.
   // half4 datatype is checked in a different test case.
@@ -279,4 +283,5 @@ int main() {
   check<s::cl_int4>(HostPtr);
   check<s::cl_uint4>(HostPtr);
   check<s::cl_float4>(HostPtr);
+  return 0;
 }

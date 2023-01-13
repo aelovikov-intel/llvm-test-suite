@@ -7,10 +7,15 @@
 
 int main() {
   s::queue myQueue(s::default_selector_v);
+  s::device d = myQueue.get_device();
 
   // Device doesn't support cl_khr_fp16 extension - skip.
-  if (!myQueue.get_device().has(sycl::aspect::fp16))
+  if (!d.has(sycl::aspect::fp16))
     return 0;
+  if (!d.has(s::aspect::image)) {
+    std::cout << "Skipped due to no image support on the device" << std::endl;
+    return 0;
+  }
 
   // Half image
   if (!test<s::half4, s::image_channel_type::fp16>(myQueue))

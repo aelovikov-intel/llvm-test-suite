@@ -112,6 +112,10 @@ void try_3D(queue &Q) {
 
 int main() {
   queue Q;
+  if (!Q.get_device().has(aspect::image)) {
+    std::cout << "Skipped due to no image support on the device" << std::endl;
+    return 0;
+  }
 
   try_1D(Q);
   try_2D(Q);

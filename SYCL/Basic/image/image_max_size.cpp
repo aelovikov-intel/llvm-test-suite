@@ -108,6 +108,10 @@ int main() {
 
   queue Q;
   device Dev = Q.get_device();
+  if (!Dev.has(aspect::image)) {
+    std::cout << "Skipped due to no image support on the device" << std::endl;
+    return 0;
+  }
   std::cout << "Running on " << Dev.get_info<info::device::name>()
             << ", Driver: " << Dev.get_info<info::device::driver_version>()
             << std::endl;

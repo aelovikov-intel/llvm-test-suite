@@ -170,6 +170,10 @@ bool test3d(coordT coord, dataT expectedResult) {
 }
 
 int main() {
+  if (!sycl::device{}.has(s::aspect::image)) {
+    std::cout << "Skipped due to no image support on the device" << std::endl;
+    return 0;
+  }
 
   bool passed = true;
 

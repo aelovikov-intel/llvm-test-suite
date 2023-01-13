@@ -35,6 +35,10 @@ int main() {
     sycl::image<2> Img1(Img1HostData.data(), ChanOrder, ChanType, Img1Size);
     sycl::image<2> Img2(Img2HostData.data(), ChanOrder, ChanType, Img2Size);
     TestQueue Q{sycl::default_selector_v};
+    if (!Q.get_device().has(sycl::aspect::image)) {
+      std::cout << "Skipped due to no image support on the device" << std::endl;
+      return 0;
+    }
     Q.submit([&](sycl::handler &CGH) {
       auto Img1Acc = Img1.get_access<sycl::float4, SYCLRead>(CGH);
       auto Img2Acc = Img2.get_access<sycl::float4, SYCLWrite>(CGH);

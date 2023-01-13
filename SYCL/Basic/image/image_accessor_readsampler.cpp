@@ -61,6 +61,11 @@ void checkReadSampler(char *host_ptr, s::sampler Sampler, s::cl_float4 Coord,
     s::image<3> Img(host_ptr, s::image_channel_order::rgba,
                     s::image_channel_type::snorm_int8, s::range<3>{2, 3, 4});
     s::queue myQueue;
+    if (!myQueue.get_device().has(s::aspect::image)) {
+      std::cout << "Skipped device checks due to no image support on the device"
+                << std::endl;
+      return;
+    }
     s::buffer<s::cl_float4, 1> ReadDataBuf(&ReadData, s::range<1>(1));
     myQueue.submit([&](s::handler &cgh) {
       auto ReadAcc = Img.get_access<s::cl_float4, s::access::mode::read>(cgh);

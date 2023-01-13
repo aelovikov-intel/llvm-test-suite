@@ -8,6 +8,10 @@
 int main() {
 
   s::queue myQueue(s::default_selector_v);
+  if (!myQueue.get_device().has(s::aspect::image)) {
+    std::cout << "Skipped due to no image support on the device" << std::endl;
+    return 0;
+  }
 
   bool passed = true;
 
